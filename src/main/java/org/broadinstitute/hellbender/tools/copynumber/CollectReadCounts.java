@@ -1,6 +1,7 @@
 package org.broadinstitute.hellbender.tools.copynumber;
 
 import com.google.common.collect.HashMultiset;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Multiset;
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.util.Locatable;
@@ -37,7 +38,6 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Collects read counts at specified intervals.  The count for each interval is calculated by counting
@@ -124,16 +124,18 @@ public final class CollectReadCounts extends ReadWalker {
      */
     private SampleLocatableMetadata metadata;
 
+    private List<SimpleInterval> intervals;
+
     /**
      * Overlap detector used to determine when read starts overlap with input intervals.
      */
     private CachedOverlapDetector<SimpleInterval> intervalCachedOverlapDetector;
 
-    private Multiset<SimpleInterval> intervalMultiset = HashMultiset.create();
+    private Multiset<SimpleInterval> intervalMultiset;
 
     @Override
     public List<ReadFilter> getDefaultReadFilters() {
-        final List<ReadFilter> filters = new ArrayList<>(super.getDefaultReadFilters());
+        final List<ReadFilter> filters = new ArrayList<>();
         filters.add(ReadFilterLibrary.MAPPED);
         filters.add(ReadFilterLibrary.NON_ZERO_REFERENCE_LENGTH_ALIGNMENT);
         filters.add(ReadFilterLibrary.NOT_DUPLICATE);
@@ -159,8 +161,9 @@ public final class CollectReadCounts extends ReadWalker {
         CopyNumberArgumentValidationUtils.validateIntervalArgumentCollection(intervalArgumentCollection);
 
         logger.info("Initializing and validating intervals...");
-        final List<SimpleInterval> intervals = intervalArgumentCollection.getIntervals(sequenceDictionary);
+        intervals = intervalArgumentCollection.getIntervals(sequenceDictionary);
         intervalCachedOverlapDetector = new CachedOverlapDetector<>(intervals);
+        intervalMultiset = HashMultiset.create(intervals.size());
 
         //verify again that intervals do not overlap
         Utils.validateArg(intervals.stream().noneMatch(i -> intervalCachedOverlapDetector.overlapDetector.getOverlaps(i).size() > 1),
@@ -186,9 +189,9 @@ public final class CollectReadCounts extends ReadWalker {
         logger.info("Writing read counts to " + outputCountsFile);
         final SimpleCountCollection readCounts = new SimpleCountCollection(
                 metadata,
-                intervalCachedOverlapDetector.overlapDetector.getAll().stream()
+                ImmutableList.copyOf(intervals.stream()     //making this an ImmutableList avoids a redundant defensive copy
                         .map(i -> new SimpleCount(i, intervalMultiset.count(i)))
-                        .collect(Collectors.toList()));
+                        .iterator()));
 
         if (format == Format.HDF5) {
             readCounts.writeHDF5(outputCountsFile);
