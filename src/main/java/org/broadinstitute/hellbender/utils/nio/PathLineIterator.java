@@ -77,7 +77,4 @@ public class PathLineIterator implements AutoCloseable, Iterable<String> {
         return lines.spliterator();
     }
 
-    public Stream<String> stream() {
-        return lines;
-    }
 }
